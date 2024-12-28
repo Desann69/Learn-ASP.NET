@@ -31,7 +31,7 @@ namespace PromoCodeFactory.UnitTests.WebHost.Controllers.Partners
             _partnersController = fixture.Build<PartnersController>()
                                          .OmitAutoProperties()
                                          .Create();
-        }
+        } 
 
         public Partner CreateBasePartner()
         {

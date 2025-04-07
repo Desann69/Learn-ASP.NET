@@ -40,7 +40,7 @@ namespace PromoCodeFactory.WebHost.Controllers
                 LastName = x.LastName
             }).ToList();
 
-            return Ok(response);
+            return Ok(response); 
         }
         
         [HttpGet("{id:guid}")]

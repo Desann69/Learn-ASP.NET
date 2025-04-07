@@ -339,3 +339,4 @@ ASALocalRun/
 .localhistory/
 
 .vscode/
+.DS_Store

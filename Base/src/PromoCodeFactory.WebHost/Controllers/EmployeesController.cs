@@ -1,11 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using PromoCodeFactory.Core.Abstractions.Repositories;
 using PromoCodeFactory.Core.Domain.Administration;
 using PromoCodeFactory.WebHost.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace PromoCodeFactory.WebHost.Controllers
 {
@@ -18,12 +19,9 @@ namespace PromoCodeFactory.WebHost.Controllers
     {
         private readonly IRepository<Employee> _employeeRepository;
 
-        private readonly IRepository<Role> _rolesRepository;
-
-        public EmployeesController(IRepository<Employee> employeeRepository, IRepository<Role> rolesRepository)
+        public EmployeesController(IRepository<Employee> employeeRepository)
         {
             _employeeRepository = employeeRepository;
-            _rolesRepository = rolesRepository;
         }
 
         /// <summary>
@@ -31,9 +29,9 @@ namespace PromoCodeFactory.WebHost.Controllers
         /// </summary>
         /// <returns></returns>
         [HttpGet]
-        public async Task<List<EmployeeShortResponse>> GetEmployeesAsync()
+        public async Task<List<EmployeeShortResponse>> GetEmployeesAsync(CancellationToken cancellationToken = default)
         {
-            var employees = await _employeeRepository.GetAllAsync();
+            var employees = await _employeeRepository.GetAllAsync(cancellationToken);
 
             var employeesModelList = employees.Select(x =>
                 new EmployeeShortResponse()
@@ -51,9 +49,9 @@ namespace PromoCodeFactory.WebHost.Controllers
         /// </summary>
         /// <returns></returns>
         [HttpGet("{id:guid}")]
-        public async Task<ActionResult<EmployeeResponse>> GetEmployeeByIdAsync(Guid id)
+        public async Task<ActionResult<EmployeeResponse>> GetEmployeeByIdAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            Employee employee = await _employeeRepository.GetByIdAsync(id);
+            var employee = await _employeeRepository.GetByIdAsync(id, cancellationToken);
 
             if (employee == null)
                 return NotFound();
@@ -62,7 +60,7 @@ namespace PromoCodeFactory.WebHost.Controllers
             {
                 Id = employee.Id,
                 Email = employee.Email,
-                Roles = employee.Roles?.Select(x => new RoleItemResponse()
+                Roles = employee.Roles.Select(x => new RoleItemResponse()
                 {
                     Name = x.Name,
                     Description = x.Description
@@ -75,56 +73,94 @@ namespace PromoCodeFactory.WebHost.Controllers
         }
 
         /// <summary>
-        /// Добавление нового работника
+        /// Создать нового сотрудника
         /// </summary>
-        /// <returns>Id нового работника</returns>
-        // [ArrayInput("nn")]   
-        [HttpGet("Create/fName:{fName}&lName{lName}&email:{email}&idsRoles")]
-        public async Task<ActionResult<Guid>> Create(string fName, string lName, string email, [FromQuery]Guid[]? idsRoles)
+        /// <returns></returns>
+        [HttpPost("create")]
+        public async Task<ActionResult<EmployeeResponse>> CreateEmployeeAsync(EmployeeCreateDTO employeeCreateDTO, CancellationToken cancellationToken = default)
         {
-            Employee employee = new Employee();
-            employee.Id = Guid.NewGuid();
-            employee.FirstName = fName;
-            employee.LastName = lName;
-            employee.Email = email;
+            var newEntity = new Employee()
+            {
+                FirstName = employeeCreateDTO.FirstName,
+                LastName = employeeCreateDTO.LastName,
+                Email = employeeCreateDTO.Email,
+                AppliedPromocodesCount = employeeCreateDTO.AppliedPromocodesCount,
+                Roles = new List<Role>(),
+            };
 
-            IEnumerable<Role> roles = await _rolesRepository.GetAllAsync();
-            employee.Roles = roles.Where(r => idsRoles.Contains(r.Id)).ToList();
+            var result = await _employeeRepository.CreateAsync(newEntity, cancellationToken);
 
-            await _employeeRepository.AddAsync(employee);
-            return employee.Id;
+            var employeeResponse = new EmployeeResponse()
+            {
+                Id = result.Id,
+                Email = result.Email,
+                Roles = result.Roles.Select(x => new RoleItemResponse()
+                {
+                    Name = x.Name,
+                    Description = x.Description
+                }).ToList(),
+                FullName = result.FullName,
+                AppliedPromocodesCount = result.AppliedPromocodesCount
+            };
+
+            return employeeResponse;
         }
+
 
         /// <summary>
-        /// Удаление работника
+        /// Обновить сотрудника
         /// </summary>
-        [HttpGet("Delete/id:{id}")]
-        public async Task<ActionResult<bool>> Delete(Guid id)
+        /// <returns></returns>
+        [HttpPut("update")]
+        public async Task<ActionResult<EmployeeResponse>> UpdateEmployeeAsync(EmployeeUpdateDTO employeeUpdateDTO, CancellationToken cancellationToken = default)
         {
-            bool result = await _employeeRepository.RemoveByIdAsync(id);
-            if(!result)
+            var entity = await _employeeRepository.GetByIdAsync(employeeUpdateDTO.Id, cancellationToken);
+
+            if (entity == null)
                 return NotFound();
-            return true;
+
+            entity.Email = employeeUpdateDTO.Email;
+            entity.FirstName = employeeUpdateDTO.FirstName;
+            entity.LastName = employeeUpdateDTO.LastName;
+            entity.AppliedPromocodesCount = employeeUpdateDTO.AppliedPromocodesCount;
+
+            var result = await _employeeRepository.UpdateAsync(entity, cancellationToken);
+
+            var employeeResponse = new EmployeeResponse()
+            {
+                Id = result.Id,
+                Email = result.Email,
+                Roles = result.Roles.Select(x => new RoleItemResponse()
+                {
+                    Name = x.Name,
+                    Description = x.Description
+                }).ToList(),
+                FullName = result.FullName,
+                AppliedPromocodesCount = result.AppliedPromocodesCount
+            };
+
+            return employeeResponse;
         }
+
 
         /// <summary>
-        /// Обновление данных работника
+        /// Удалить сотрудника
         /// </summary>
-        [HttpGet("Update/id:{id}&fName:{fName}&lName{lName}&email:{email}&idsRoles")]
-        public async Task<ActionResult<bool>> Update(Guid id, string fName, string lName, string email, [FromQuery]Guid[]? idsRoles)
+        /// <returns></returns>
+        [HttpGet("delete/{id}")]
+        public async Task<ActionResult> DeleteEmployeeAsync(Guid id, CancellationToken cancellationToken = default)
         {
-            Employee employee = await _employeeRepository.GetByIdAsync(id);
-            if(employee == null)
+            var entity = await _employeeRepository.GetByIdAsync(id, cancellationToken);
+
+            if (entity == null)
                 return NotFound();
 
-            employee.FirstName = fName;
-            employee.LastName = lName;
-            employee.Email = email;
+            var deleted = await _employeeRepository.DeleteAsync(id, cancellationToken);
+            if (deleted)
+                return Ok("Сотрудник удален");
 
-            IEnumerable<Role> roles = await _rolesRepository.GetAllAsync();
-            employee.Roles = roles.Where(r => idsRoles.Contains(r.Id)).ToList();
-
-            return true;
+            return BadRequest();
         }
+
     }
 }
